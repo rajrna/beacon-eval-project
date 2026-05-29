@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Beacon Dataset Example",
+  "description": "Schema for a single example in a Beacon golden dataset JSONL file",
+  "type": "object",
+  "required": ["query", "expected_behaviors", "prohibited_behaviors", "difficulty"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Optional stable external ID for this example"
+    },
+    "query": {
+      "type": "string",
+      "minLength": 5,
+      "description": "The student query text"
+    },
+    "expected_behaviors": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3 },
+      "minItems": 1,
+      "description": "Behaviors the agent response MUST demonstrate"
+    },
+    "prohibited_behaviors": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3 },
+      "description": "Behaviors the agent response must NOT exhibit"
+    },
+    "reference_answer": {
+      "type": ["string", "null"],
+      "description": "Optional ideal reference answer"
+    },
+    "persona": {
+      "type": ["string", "null"],
+      "enum": ["adult_learner", "first_gen", "military", "international", "struggling", "traditional", null],
+      "description": "Student persona dimension"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["easy", "medium", "hard", "adversarial"],
+      "description": "Difficulty level of this example"
+    },
+    "safety_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Safety-relevant tags e.g. mental_health, crisis_referral"
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "description": "Optional notes for SME reviewers"
+    }
+  }
+}

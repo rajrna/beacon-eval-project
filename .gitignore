@@ -1,0 +1,95 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+infra/env.local
+*.pem
+*.key
+
+# ── Testing & coverage ────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+nosetests.xml
+test-results/
+
+# ── Type checking ─────────────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/build/
+.npm
+*.tsbuildinfo
+
+# ── Vite ─────────────────────────────────────────────────────────────────────
+frontend/.vite/
+
+# ── Playwright ────────────────────────────────────────────────────────────────
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+.docker/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Azure ─────────────────────────────────────────────────────────────────────
+.azure/
+*.bicepparam
+infra/*.parameters.json
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Local dev scripts ─────────────────────────────────────────────────────────
+check_eval.py
+check_run.py
+load_examples.py
+
+# ── Alembic ───────────────────────────────────────────────────────────────────
+# Keep migrations, ignore local overrides
+backend/alembic.ini.local
+
+# ── spaCy models ─────────────────────────────────────────────────────────────
+backend/models/

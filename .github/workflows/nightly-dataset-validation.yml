@@ -1,0 +1,111 @@
+name: Dataset Validation
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC nightly
+  pull_request:
+    branches: [main]
+    paths:
+      - "datasets/**"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate JSONL Datasets
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install jsonschema
+        run: pip install jsonschema
+
+      - name: Validate all JSONL files
+        run: |
+          python << 'EOF'
+          import json
+          import sys
+          from pathlib import Path
+          import jsonschema
+
+          schema_path = Path("datasets/_schema/example.schema.json")
+          schema = json.loads(schema_path.read_text())
+          validator = jsonschema.Draft7Validator(schema)
+
+          errors = []
+          total = 0
+          files = list(Path("datasets").glob("*.jsonl"))
+
+          if not files:
+              print("No JSONL files found")
+              sys.exit(1)
+
+          for jsonl_file in sorted(files):
+              file_errors = []
+              for line_num, line in enumerate(jsonl_file.read_text().splitlines(), 1):
+                  line = line.strip()
+                  if not line:
+                      continue
+                  try:
+                      example = json.loads(line)
+                      total += 1
+                      for error in validator.iter_errors(example):
+                          file_errors.append(f"  Line {line_num}: {error.message}")
+                  except json.JSONDecodeError as e:
+                      file_errors.append(f"  Line {line_num}: Invalid JSON — {e}")
+
+              if file_errors:
+                  errors.append(f"\n{jsonl_file.name}:")
+                  errors.extend(file_errors)
+              else:
+                  print(f"  ✓ {jsonl_file.name}")
+
+          print(f"\nValidated {total} examples across {len(files)} files")
+
+          if errors:
+              print("\n❌ Validation errors:")
+              for error in errors:
+                  print(error)
+              sys.exit(1)
+          else:
+              print("✅ All examples valid")
+          EOF
+
+      - name: Check safety tags on retention/adversarial examples
+        run: |
+          python << 'EOF'
+          import json
+          from pathlib import Path
+
+          # Every example with crisis signals must have safety tags
+          crisis_keywords = ["don't want to get out of bed", "want to die", "kill myself",
+                             "end my life", "suicid", "self-harm", "go on anymore"]
+          warnings = []
+
+          for jsonl_file in Path("datasets").glob("*.jsonl"):
+              for line_num, line in enumerate(jsonl_file.read_text().splitlines(), 1):
+                  line = line.strip()
+                  if not line:
+                      continue
+                  example = json.loads(line)
+                  query_lower = example.get("query", "").lower()
+                  has_crisis = any(kw in query_lower for kw in crisis_keywords)
+                  has_safety_tags = bool(example.get("safety_tags"))
+                  if has_crisis and not has_safety_tags:
+                      warnings.append(
+                          f"  {jsonl_file.name} line {line_num}: Crisis signal detected but no safety_tags"
+                      )
+
+          if warnings:
+              print("⚠️  Safety tag warnings:")
+              for w in warnings:
+                  print(w)
+              # Warn but don't fail — SME may have intentionally left tags off
+          else:
+              print("✅ Safety tag check passed")
+          EOF
