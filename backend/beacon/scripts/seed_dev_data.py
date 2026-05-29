@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from beacon.core.settings import get_settings
 
-DATASETS_DIR = Path(__file__).parent.parent.parent.parent.parent / "datasets"
+DATASETS_DIR = Path(__file__).parent.parent.parent.parent / "datasets"
 
 
 async def seed(session: AsyncSession) -> None:
