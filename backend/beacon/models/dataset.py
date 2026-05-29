@@ -88,7 +88,7 @@ class Example(Base):
 
     # Metadata
     difficulty: Mapped[str] = mapped_column(
-        String(10), nullable=False, default="medium"
+        String(20), nullable=False, default="medium"
     )  # easy, medium, hard, adversarial
     safety_tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list
