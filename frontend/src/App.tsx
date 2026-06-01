@@ -7,6 +7,7 @@ import { setTokenGetter } from '@/lib/api/client'
 import { Shell } from '@/components/layout/Shell'
 import Institutions from '@/pages/Institutions'
 import { Programs, Agents, Datasets, Judges, TraceBrowser, Settings } from '@/pages/Other'
+import Chat from '@/pages/Chat'
 import Runs from '@/pages/Runs'
 import RunDetail from '@/pages/RunDetail'
 import TraceDetail from '@/pages/TraceDetail'
@@ -35,6 +36,7 @@ function AppRoutes() {
         <Route path="/traces/:id" element={<TraceDetail />} />
         <Route path="/sme/queue" element={<SmeQueue />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/chat" element={<Chat />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

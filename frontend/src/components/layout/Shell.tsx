@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   Building2, GraduationCap, Bot, Database, Scale,
-  PlayCircle, Activity, Inbox, Settings, Menu, X, AlertTriangle,
+  PlayCircle, Activity, Inbox, Settings, Menu, X, AlertTriangle, MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth/useAuth'
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { to: '/runs', icon: PlayCircle, label: 'Eval Runs' },
   { to: '/traces', icon: Activity, label: 'Traces' },
   { to: '/sme/queue', icon: Inbox, label: 'SME Queue' },
+  { to: '/chat', icon: MessageSquare, label: 'Student Chat' },
 ]
 
 export function Shell({ children }: { children: React.ReactNode }) {

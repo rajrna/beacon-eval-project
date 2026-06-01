@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env.local",
+        env_file=[".env.local", "../.env.local", "backend/.env.local"],
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: PostgresDsn = Field(
-        default="postgresql+asyncpg://beacon:beacon@localhost:5432/beacon"
+        default="postgresql+asyncpg://beacon:beacon@localhost:5435/beacon"
     )
     database_pool_size: int = 10
     database_max_overflow: int = 20
