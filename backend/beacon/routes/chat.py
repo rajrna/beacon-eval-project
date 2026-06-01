@@ -7,7 +7,7 @@ router = APIRouter()
 
 
 class ChatMessage(BaseModel):
-    role: str  # user or assistant
+    role: str
     content: str
 
 
@@ -22,6 +22,7 @@ class ChatResponse(BaseModel):
     trace_id: str | None = None
     safety_flagged: bool = False
     review_priority: str | None = None
+    injection_blocked: bool = False
 
 
 @router.post("", response_model=ChatResponse)
@@ -31,11 +32,15 @@ async def chat(
     current_user: CurrentUser,
 ) -> ChatResponse:
     import uuid
+    import structlog
     from beacon.models.agent import AgentVersion
     from beacon.integrations.anthropic_client import get_anthropic_client
     from beacon.services.eval import TraceService
     from beacon.schemas.eval import TraceIngest
+    from beacon.safety.injection import check_injection, sanitize_for_prompt
     from sqlalchemy import select
+
+    logger = structlog.get_logger(__name__)
 
     # Load agent version
     result = await session.execute(
@@ -46,30 +51,65 @@ async def chat(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Agent version not found")
 
-    # Build messages for Anthropic
-    anthropic_messages = [
-        {"role": msg.role, "content": msg.content}
-        for msg in data.messages
-    ]
+    user_message = data.messages[-1].content
 
-    # Call the agent
+    # ── Injection check ───────────────────────────────────────────────────────
+    injection = check_injection(user_message)
+
+    if injection.blocked:
+        logger.warning(
+            "injection_blocked",
+            pattern=injection.pattern_matched,
+            session_id=data.session_id,
+        )
+        # Still ingest as a trace so it appears in the SME queue
+        trace_service = TraceService(session)
+        trace = await trace_service.ingest(TraceIngest(
+            agent_version_id=uuid.UUID(data.agent_version_id),
+            raw_prompt=user_message,
+            raw_response=injection.safe_response,
+            session_id=data.session_id or str(uuid.uuid4()),
+            model_id=agent_version.model_id,
+        ))
+        return ChatResponse(
+            response=injection.safe_response,
+            trace_id=str(trace.id),
+            safety_flagged=True,
+            review_priority="concerning",
+            injection_blocked=True,
+        )
+
+    if injection.flagged:
+        logger.info(
+            "injection_flagged_soft",
+            pattern=injection.pattern_matched,
+            session_id=data.session_id,
+        )
+
+    # ── Sanitize input ────────────────────────────────────────────────────────
+    sanitized_message = sanitize_for_prompt(user_message)
+
+    # ── Call agent ────────────────────────────────────────────────────────────
     client = get_anthropic_client()
     agent_result = await client.call_agent(
         system_prompt=agent_version.system_prompt,
-        user_message=data.messages[-1].content,
+        user_message=sanitized_message,
         model=agent_version.model_id,
         max_tokens=agent_version.max_tokens,
         temperature=agent_version.temperature,
-        metadata={"session_id": data.session_id, "agent_version_id": data.agent_version_id},
+        metadata={
+            "session_id": data.session_id,
+            "agent_version_id": data.agent_version_id,
+            "injection_flagged": injection.flagged,
+        },
     )
-
     response_text = agent_result["text"]
 
-    # Ingest as a production trace (runs safety pipeline automatically)
+    # ── Ingest trace (runs safety pipeline) ───────────────────────────────────
     trace_service = TraceService(session)
     trace_ingest = TraceIngest(
         agent_version_id=uuid.UUID(data.agent_version_id),
-        raw_prompt=data.messages[-1].content,
+        raw_prompt=user_message,
         raw_response=response_text,
         session_id=data.session_id or str(uuid.uuid4()),
         input_tokens=agent_result.get("input_tokens"),
@@ -78,9 +118,17 @@ async def chat(
     )
     trace = await trace_service.ingest(trace_ingest)
 
+    # Merge injection flag into safety flags
+    if injection.flagged and not trace.needs_review:
+        trace.needs_review = True
+        trace.review_priority = "concerning"
+        trace.safety_flags = list(trace.safety_flags or []) + ["injection_attempt"]
+        await session.flush()
+
     return ChatResponse(
         response=response_text,
         trace_id=str(trace.id),
         safety_flagged=trace.needs_review,
         review_priority=trace.review_priority,
+        injection_blocked=False,
     )
