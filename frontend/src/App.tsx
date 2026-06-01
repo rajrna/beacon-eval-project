@@ -8,6 +8,9 @@ import { Shell } from '@/components/layout/Shell'
 import Institutions from '@/pages/Institutions'
 import { Programs, Agents, Datasets, Judges, TraceBrowser, Settings } from '@/pages/Other'
 import Chat from '@/pages/Chat'
+import DatasetDetail from '@/pages/DatasetDetail'
+import AgentDetail from '@/pages/AgentDetail'
+import AgentVersionDetail from '@/pages/AgentVersionDetail'
 import Runs from '@/pages/Runs'
 import RunDetail from '@/pages/RunDetail'
 import TraceDetail from '@/pages/TraceDetail'
@@ -28,7 +31,10 @@ function AppRoutes() {
         <Route path="/institutions" element={<Institutions />} />
         <Route path="/programs" element={<Programs />} />
         <Route path="/agents" element={<Agents />} />
+        <Route path="/agents/:id" element={<AgentDetail />} />
+        <Route path="/agents/:id/versions/:versionId" element={<AgentVersionDetail />} />
         <Route path="/datasets" element={<Datasets />} />
+        <Route path="/datasets/:id" element={<DatasetDetail />} />
         <Route path="/judges" element={<Judges />} />
         <Route path="/runs" element={<Runs />} />
         <Route path="/runs/:id" element={<RunDetail />} />
