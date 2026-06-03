@@ -1,213 +1,138 @@
 """
-Anthropic client wrapper.
-Handles retries, structured-output parsing, cost accounting, and Langfuse instrumentation.
-All LLM calls in Beacon go through this module.
+Anthropic client — AWS Bedrock via boto3 Converse API.
+
+Uses AWS Bedrock API key (bearer token) authentication.
+Set AWS_BEARER_TOKEN_BEDROCK env var with the key.
+
+Required env vars:
+    AWS_BEARER_TOKEN_BEDROCK   short or long-term Bedrock API key
+    AWS_REGION                 (default: us-east-1)
+    BEDROCK_MODEL_ID           (default: us.anthropic.claude-sonnet-4-6)
 """
-import json
-import re
+
+import logging
+import os
 from typing import Any
 
-import anthropic
-import structlog
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+import boto3
 
 from beacon.core.settings import get_settings
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
-_COST_PER_M_INPUT = {
-    "claude-sonnet-4-5": 3.00,
-    "claude-opus-4-5": 15.00,
-    "claude-sonnet-4-6": 3.00,
-}
-_COST_PER_M_OUTPUT = {
-    "claude-sonnet-4-5": 15.00,
-    "claude-opus-4-5": 75.00,
-    "claude-sonnet-4-6": 15.00,
-}
+settings = get_settings()
 
 
-def _compute_cost(model_id: str, input_tokens: int, output_tokens: int) -> float:
-    input_rate = _COST_PER_M_INPUT.get(model_id, 3.00)
-    output_rate = _COST_PER_M_OUTPUT.get(model_id, 15.00)
-    return (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
+def _make_client():
+    os.environ["AWS_BEARER_TOKEN_BEDROCK"] = settings.bedrock_api_key
+    return boto3.client("bedrock-runtime", region_name=settings.aws_region)
 
 
-def _extract_json(text: str) -> dict:
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    return json.loads(text)
+_client = None
 
 
-def _get_langfuse_observe():
-    """Lazily import observe to avoid hard dependency."""
-    try:
-        from langfuse import observe
-        return observe
-    except ImportError:
-        return None
-
-
-class AnthropicClient:
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = anthropic.AsyncAnthropic(
-            api_key=settings.anthropic_api_key,
-            max_retries=0,
-        )
-        self._default_model = settings.anthropic_default_model
-        self._safety_model = settings.anthropic_safety_model
-
-    @retry(
-        retry=retry_if_exception_type((anthropic.RateLimitError, anthropic.APIStatusError)),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        stop=stop_after_attempt(3),
-        reraise=True,
-    )
-    async def complete(
-        self,
-        messages: list[dict[str, str]],
-        system: str | None = None,
-        model: str | None = None,
-        max_tokens: int = 1024,
-        temperature: float = 0.0,
-        observation_name: str = "llm_call",
-        metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        model_id = model or self._default_model
-        settings = get_settings()
-
-        if not settings.anthropic_api_key:
-            logger.warning("anthropic_key_missing_returning_mock")
-            return {
-                "text": '{"score": 0.8, "passed": true, "reasoning": "Mock response — no API key configured"}',
-                "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "model": model_id,
-            }
-
-        kwargs: dict[str, Any] = {
-            "model": model_id,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "messages": messages,
-        }
-        if system:
-            kwargs["system"] = system
-
-        # Try to use Langfuse instrumentation
-        lf_client = None
-        trace_id = None
-        try:
-            from beacon.integrations.langfuse_client import get_langfuse_client
-            lf = get_langfuse_client()
-            if lf._enabled and lf._client:
-                lf_client = lf._client
-                trace_id = lf._client.create_trace_id()
-        except Exception:
-            pass
-
-        # Start Langfuse generation observation if available
-        obs = None
-        if lf_client and trace_id:
-            try:
-                obs = lf_client.start_observation(
-                    name=observation_name,
-                    as_type="generation",
-                    model=model_id,
-                    model_parameters={"temperature": temperature, "max_tokens": max_tokens},
-                    input=messages,
-                    metadata=metadata or {},
-                    trace_context={"trace_id": trace_id},
-                )
-            except Exception:
-                obs = None
-
-        logger.debug("anthropic_request", model=model_id, message_count=len(messages))
-        response = await self._client.messages.create(**kwargs)
-
-        text = response.content[0].text if response.content else ""
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
-        cost = _compute_cost(model_id, input_tokens, output_tokens)
-
-        logger.debug("anthropic_response", model=model_id, input_tokens=input_tokens,
-                     output_tokens=output_tokens, cost_usd=round(cost, 6))
-
-        # End Langfuse observation with output and cost
-        if obs:
-            try:
-                obs.update(
-                    output=text,
-                    usage_details={"input": input_tokens, "output": output_tokens},
-                    cost_details={"total": cost},
-                )
-                obs.end()
-            except Exception:
-                pass
-
-        return {
-            "text": text,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "cost_usd": cost,
-            "model": model_id,
-            "langfuse_trace_id": trace_id,
-        }
-
-    async def complete_structured(
-        self,
-        messages: list[dict[str, str]],
-        system: str | None = None,
-        model: str | None = None,
-        max_tokens: int = 1024,
-        temperature: float = 0.0,
-        observation_name: str = "judge_call",
-    ) -> dict[str, Any]:
-        result = await self.complete(
-            messages=messages, system=system, model=model,
-            max_tokens=max_tokens, temperature=temperature,
-            observation_name=observation_name,
-        )
-        try:
-            result["parsed"] = _extract_json(result["text"])
-        except (json.JSONDecodeError, ValueError):
-            logger.warning("structured_output_parse_failed", text=result["text"][:200])
-            messages_with_correction = messages + [
-                {"role": "assistant", "content": result["text"]},
-                {"role": "user", "content": "Your response was not valid JSON. Please respond with only a valid JSON object, no markdown fences."},
-            ]
-            result = await self.complete(
-                messages=messages_with_correction, system=system, model=model,
-                max_tokens=max_tokens, temperature=0.0,
-                observation_name=observation_name,
-            )
-            result["parsed"] = _extract_json(result["text"])
-        return result
-
-    async def call_agent(
-        self,
-        system_prompt: str,
-        user_message: str,
-        model: str | None = None,
-        max_tokens: int = 1024,
-        temperature: float = 0.0,
-        tool_definitions: list[dict] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        messages = [{"role": "user", "content": user_message}]
-        return await self.complete(
-            messages=messages, system=system_prompt, model=model,
-            max_tokens=max_tokens, temperature=temperature,
-            observation_name="agent_call",
-            metadata=metadata or {},
-        )
-
-
-_client: AnthropicClient | None = None
-
-
-def get_anthropic_client() -> AnthropicClient:
+def get_client():
     global _client
     if _client is None:
-        _client = AnthropicClient()
+        _client = _make_client()
     return _client
+
+
+def estimate_cost(input_tokens: int, output_tokens: int, model: str | None = None) -> float:
+    """Rough USD cost estimate. Treat as approximation for dashboard display."""
+    resolved_model = model or settings.bedrock_model_id
+
+    pricing = {
+        "us.anthropic.claude-sonnet-4-6": (3.00, 15.00),
+        "us.anthropic.claude-3-5-haiku-20241022-v1:0": (0.80, 4.00),
+        "us.anthropic.claude-3-5-sonnet-20241022-v2:0": (3.00, 15.00),
+    }
+
+    input_price, output_price = pricing.get(resolved_model, (3.00, 15.00))
+    return (input_tokens / 1_000_000 * input_price) + (output_tokens / 1_000_000 * output_price)
+
+
+async def call_agent(
+    *,
+    system_prompt: str,
+    user_message: str,
+    model: str | None = None,
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+) -> dict:
+    """Call the agent via Bedrock Converse API. Returns text, cost, token counts."""
+    import asyncio
+    resolved_model = model or settings.bedrock_model_id
+
+    # boto3 is sync — run in executor to avoid blocking the event loop
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(
+        None,
+        lambda: get_client().converse(
+            modelId=resolved_model,
+            system=[{"text": system_prompt}],
+            messages=[{"role": "user", "content": [{"text": user_message}]}],
+            inferenceConfig={
+                "maxTokens": max_tokens,
+                "temperature": temperature,
+            },
+        )
+    )
+
+    text = response["output"]["message"]["content"][0]["text"]
+    input_tokens = response["usage"]["inputTokens"]
+    output_tokens = response["usage"]["outputTokens"]
+
+    logger.debug("bedrock_agent_call", extra={
+        "model": resolved_model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    })
+
+    return {
+        "text": text,
+        "cost_usd": estimate_cost(input_tokens, output_tokens, resolved_model),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
+
+
+async def complete(
+    *,
+    prompt: str,
+    system: str | None = None,
+    model: str | None = None,
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+    metadata: dict[str, Any] | None = None,
+) -> dict:
+    """Single-turn completion. Returns dict with text and usage."""
+    return await call_agent(
+        system_prompt=system or "You are a helpful assistant.",
+        user_message=prompt,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+
+
+async def complete_structured(
+    *,
+    prompt: str,
+    system: str | None = None,
+    model: str | None = None,
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+    metadata: dict[str, Any] | None = None,
+) -> str:
+    """Returns just the text string. Used by judges."""
+    result = await complete(
+        prompt=prompt,
+        system=system,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        metadata=metadata,
+    )
+    return result["text"]
+

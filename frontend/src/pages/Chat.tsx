@@ -1,177 +1,386 @@
-import { useState, useRef, useEffect } from 'react'
-import { Send, AlertTriangle, Shield, Bot, User, Loader2 } from 'lucide-react'
-import { useAgents, useAgentVersions, useInstitutions, usePrograms } from '@/lib/api/hooks'
-import { api } from '@/lib/api/client'
-import { cn } from '@/lib/utils'
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+} from "react";
+import {
+  Send,
+  AlertTriangle,
+  Shield,
+  Bot,
+  User,
+  Loader2,
+  Trash2,
+  Copy,
+  Download,
+  CheckCheck,
+} from "lucide-react";
+import {
+  useAgents,
+  useAgentVersions,
+  useInstitutions,
+  usePrograms,
+} from "@/lib/api/hooks";
+import { api } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 
 interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  safety_flagged?: boolean
-  review_priority?: string
-  trace_id?: string
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  safety_flagged?: boolean;
+  review_priority?: string;
+  trace_id?: string;
+  timestamp: Date;
 }
 
 interface ChatResponse {
-  response: string
-  trace_id: string | null
-  safety_flagged: boolean
-  review_priority: string | null
+  response: string;
+  trace_id: string | null;
+  safety_flagged: boolean;
+  review_priority: string | null;
 }
 
-function SafetyBanner({ priority }: { priority: string }) {
-  if (priority === 'crisis') {
+function SafetyBanner({
+  priority,
+}: {
+  priority: string;
+}) {
+  if (priority === "crisis") {
     return (
       <div className="mx-4 mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
         <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-red-800">You're not alone</p>
+          <p className="text-sm font-semibold text-red-800">
+            You're not alone
+          </p>
           <p className="text-sm text-red-700 mt-0.5">
-            If you're going through a difficult time, please reach out for support.
-            Call or text <strong>988</strong> (Suicide & Crisis Lifeline) — available 24/7.
-            Campus counseling is also available at ext. 5555.
+            If you're going through a difficult
+            time, please reach out for support.
+            Call or text <strong>988</strong>{" "}
+            (Suicide & Crisis Lifeline) —
+            available 24/7. Campus counseling is
+            also available at ext. 5555.
           </p>
         </div>
       </div>
-    )
+    );
   }
-  if (priority === 'concerning') {
+  if (priority === "concerning") {
     return (
       <div className="mx-4 mb-3 p-3 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-2">
         <Shield className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
         <p className="text-sm text-orange-800">
-          A student success advisor has been notified and will follow up with you shortly.
+          A student success advisor has been
+          notified and will follow up with you
+          shortly.
         </p>
       </div>
-    )
+    );
   }
-  return null
+  return null;
 }
 
-function MessageBubble({ message }: { message: Message }) {
-  const isUser = message.role === 'user'
-  return (
-    <div className={cn('flex gap-3 px-4 py-2', isUser ? 'flex-row-reverse' : 'flex-row')}>
-      {/* Avatar */}
-      <div className={cn(
-        'h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0',
-        isUser ? 'bg-beacon-600' : 'bg-gray-100'
-      )}>
-        {isUser
-          ? <User className="h-4 w-4 text-white" />
-          : <Bot className="h-4 w-4 text-gray-600" />
-        }
-      </div>
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-      {/* Bubble */}
-      <div className={cn(
-        'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
-        isUser
-          ? 'bg-beacon-600 text-white rounded-tr-sm'
-          : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm shadow-sm',
-        message.safety_flagged && !isUser && 'border-orange-200 bg-orange-50'
-      )}>
-        <p className="whitespace-pre-wrap">{message.content}</p>
-        {message.safety_flagged && !isUser && (
-          <div className="flex items-center gap-1 mt-2 pt-2 border-t border-orange-200">
-            <Shield className="h-3 w-3 text-orange-500" />
-            <span className="text-xs text-orange-600">Flagged for review</span>
-          </div>
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+      title="Copy message"
+    >
+      {copied ? (
+        <CheckCheck className="h-3.5 w-3.5 text-green-500" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
+function MessageBubble({
+  message,
+}: {
+  message: Message;
+}) {
+  const isUser = message.role === "user";
+  return (
+    <div
+      className={cn(
+        "group flex gap-3 px-4 py-2",
+        isUser ? "flex-row-reverse" : "flex-row",
+      )}
+    >
+      {/* Avatar */}
+      <div
+        className={cn(
+          "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
+          isUser
+            ? "bg-beacon-600"
+            : "bg-gray-100",
+        )}
+      >
+        {isUser ? (
+          <User className="h-4 w-4 text-white" />
+        ) : (
+          <Bot className="h-4 w-4 text-gray-600" />
         )}
       </div>
+
+      {/* Bubble + timestamp */}
+      <div
+        className={cn(
+          "flex flex-col gap-1 max-w-[75%]",
+          isUser ? "items-end" : "items-start",
+        )}
+      >
+        <div
+          className={cn(
+            "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+            isUser
+              ? "bg-beacon-600 text-white rounded-tr-sm"
+              : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm shadow-sm",
+            message.safety_flagged &&
+              !isUser &&
+              "border-orange-200 bg-orange-50",
+          )}
+        >
+          <p className="whitespace-pre-wrap">
+            {message.content}
+          </p>
+          {message.safety_flagged && !isUser && (
+            <div className="flex items-center gap-1 mt-2 pt-2 border-t border-orange-200">
+              <Shield className="h-3 w-3 text-orange-500" />
+              <span className="text-xs text-orange-600">
+                Flagged for review
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Timestamp + copy */}
+        <div
+          className={cn(
+            "flex items-center gap-1",
+            isUser
+              ? "flex-row-reverse"
+              : "flex-row",
+          )}
+        >
+          <span className="text-xs text-gray-400">
+            {formatTime(message.timestamp)}
+          </span>
+          {!isUser && (
+            <CopyButton text={message.content} />
+          )}
+        </div>
+      </div>
     </div>
-  )
+  );
 }
 
 export default function Chat() {
-  const [institutionId, setInstitutionId] = useState('')
-  const [programId, setProgramId] = useState('')
-  const [agentId, setAgentId] = useState('')
-  const [agentVersionId, setAgentVersionId] = useState('')
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [sessionId] = useState(() => crypto.randomUUID())
-  const [lastSafetyPriority, setLastSafetyPriority] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [institutionId, setInstitutionId] =
+    useState("");
+  const [programId, setProgramId] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [agentVersionId, setAgentVersionId] =
+    useState("");
+  const [messages, setMessages] = useState<
+    Message[]
+  >([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sessionId] = useState(() =>
+    crypto.randomUUID(),
+  );
+  const [
+    lastSafetyPriority,
+    setLastSafetyPriority,
+  ] = useState<string | null>(null);
+  const messagesEndRef =
+    useRef<HTMLDivElement>(null);
+  const inputRef =
+    useRef<HTMLTextAreaElement>(null);
 
-  const { data: institutions } = useInstitutions()
-  const { data: programs } = usePrograms(institutionId)
-  const { data: agents } = useAgents(programId)
-  const { data: agentVersions } = useAgentVersions(agentId)
+  const { data: institutions } =
+    useInstitutions();
+  const { data: programs } = usePrograms(
+    institutionId,
+  );
+  const { data: agents } = useAgents(programId);
+  const { data: agentVersions } =
+    useAgentVersions(agentId);
 
   // Auto-select latest version
   useEffect(() => {
     if (agentVersions?.items?.length) {
-      setAgentVersionId(agentVersions.items[0].id)
+      setAgentVersionId(
+        agentVersions.items[0].id,
+      );
     }
-  }, [agentVersions])
+  }, [agentVersions]);
 
   // Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages, loading]);
 
-  const selectedAgent = agents?.items?.find(a => a.id === agentId)
+  // Auto-resize textarea
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLTextAreaElement>,
+  ) => {
+    setInput(e.target.value);
+    e.target.style.height = "auto";
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+  };
+
+  const selectedAgent = agents?.items?.find(
+    (a) => a.id === agentId,
+  );
+  const selectedInstitution =
+    institutions?.items?.find(
+      (i) => i.id === institutionId,
+    );
+  const selectedProgram = programs?.items?.find(
+    (p) => p.id === programId,
+  );
+
+  const handleClear = () => {
+    setMessages([]);
+    setLastSafetyPriority(null);
+    inputRef.current?.focus();
+  };
+
+  const handleExport = () => {
+    const lines = messages
+      .map(
+        (m) =>
+          `[${formatTime(m.timestamp)}] ${m.role === "user" ? "You" : selectedAgent?.name || "Agent"}: ${m.content}`,
+      )
+      .join("\n\n");
+    const blob = new Blob([lines], {
+      type: "text/plain",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chat-${sessionId.slice(0, 8)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleSend = async () => {
-    if (!input.trim() || !agentVersionId || loading) return
+    if (
+      !input.trim() ||
+      !agentVersionId ||
+      loading
+    )
+      return;
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
-      role: 'user',
+      role: "user",
       content: input.trim(),
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setLastSafetyPriority(null);
+
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
     }
 
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setLoading(true)
-    setLastSafetyPriority(null)
+    setLoading(true);
 
     try {
-      const allMessages = [...messages, userMessage]
-      const result = await api.post<ChatResponse>('/v1/chat', {
-        messages: allMessages.map(m => ({ role: m.role, content: m.content })),
-        agent_version_id: agentVersionId,
-        session_id: sessionId,
-      })
+      const allMessages = [
+        ...messages,
+        userMessage,
+      ];
+      const result = await api.post<ChatResponse>(
+        "/v1/chat",
+        {
+          messages: allMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          agent_version_id: agentVersionId,
+          session_id: sessionId,
+        },
+      );
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
-        role: 'assistant',
+        role: "assistant",
         content: result.response,
         safety_flagged: result.safety_flagged,
-        review_priority: result.review_priority || undefined,
+        review_priority:
+          result.review_priority || undefined,
         trace_id: result.trace_id || undefined,
-      }
+        timestamp: new Date(),
+      };
 
-      setMessages(prev => [...prev, assistantMessage])
+      setMessages((prev) => [
+        ...prev,
+        assistantMessage,
+      ]);
 
-      if (result.safety_flagged && result.review_priority) {
-        setLastSafetyPriority(result.review_priority)
+      if (
+        result.safety_flagged &&
+        result.review_priority
+      ) {
+        setLastSafetyPriority(
+          result.review_priority,
+        );
       }
     } catch (err) {
-      setMessages(prev => [...prev, {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: "I'm sorry, I'm having trouble responding right now. Please try again or contact admissions directly.",
-      }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            "I'm sorry, I'm having trouble responding right now. Please try again or contact admissions directly.",
+          timestamp: new Date(),
+        },
+      ]);
     } finally {
-      setLoading(false)
-      inputRef.current?.focus()
+      setLoading(false);
+      inputRef.current?.focus();
     }
-  }
+  };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+  const handleKeyDown = (
+    e: React.KeyboardEvent,
+  ) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
-  }
+  };
 
-  const isReady = Boolean(agentVersionId)
+  const isReady = Boolean(agentVersionId);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -183,9 +392,16 @@ export default function Chat() {
           </div>
           <div>
             <p className="font-semibold text-gray-900 text-sm">
-              {selectedAgent?.name || 'Student Advisor'}
+              {selectedAgent?.name ||
+                "Student Advisor"}
             </p>
-            <p className="text-xs text-gray-500">Westbrook State University</p>
+            <p className="text-xs text-gray-500">
+              {selectedInstitution?.name
+                ? selectedProgram?.name
+                  ? `${selectedInstitution.name} · ${selectedProgram.name}`
+                  : selectedInstitution.name
+                : "Select an institution to begin"}
+            </p>
           </div>
           {isReady && (
             <span className="flex items-center gap-1 text-xs text-green-600 ml-2">
@@ -195,33 +411,77 @@ export default function Chat() {
           )}
         </div>
 
-        {/* Agent selector */}
+        {/* Actions + agent selector */}
         <div className="flex items-center gap-2">
+          {/* Clear + Export — only show when there are messages */}
+          {messages.length > 0 && (
+            <>
+              <button
+                onClick={handleExport}
+                className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                title="Export conversation"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+              <button
+                onClick={handleClear}
+                className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                title="Clear conversation"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <div className="w-px h-5 bg-gray-200" />
+            </>
+          )}
+
           <select
             className="text-xs rounded-md border border-gray-200 px-2 py-1.5 bg-white text-gray-600"
             value={institutionId}
-            onChange={e => { setInstitutionId(e.target.value); setProgramId(''); setAgentId(''); setAgentVersionId('') }}
+            onChange={(e) => {
+              setInstitutionId(e.target.value);
+              setProgramId("");
+              setAgentId("");
+              setAgentVersionId("");
+            }}
           >
             <option value="">Institution…</option>
-            {institutions?.items?.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+            {institutions?.items?.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
           </select>
           <select
             className="text-xs rounded-md border border-gray-200 px-2 py-1.5 bg-white text-gray-600"
             value={programId}
-            onChange={e => { setProgramId(e.target.value); setAgentId(''); setAgentVersionId('') }}
+            onChange={(e) => {
+              setProgramId(e.target.value);
+              setAgentId("");
+              setAgentVersionId("");
+            }}
             disabled={!institutionId}
           >
             <option value="">Program…</option>
-            {programs?.items?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {programs?.items?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
           </select>
           <select
             className="text-xs rounded-md border border-gray-200 px-2 py-1.5 bg-white text-gray-600"
             value={agentId}
-            onChange={e => setAgentId(e.target.value)}
+            onChange={(e) =>
+              setAgentId(e.target.value)
+            }
             disabled={!programId}
           >
             <option value="">Agent…</option>
-            {agents?.items?.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {agents?.items?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -234,7 +494,9 @@ export default function Chat() {
               <Bot className="h-8 w-8 text-beacon-600" />
             </div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">
-              {selectedAgent ? `Chat with ${selectedAgent.name}` : 'Select an agent to start'}
+              {selectedAgent
+                ? `Chat with ${selectedAgent.name}`
+                : "Select an agent to start"}
             </h2>
             <p className="text-sm text-gray-500 max-w-sm">
               {selectedAgent
@@ -248,10 +510,13 @@ export default function Chat() {
                   "How much does the MBA cost?",
                   "Can I take a leave of absence?",
                   "What financial aid is available?",
-                ].map(suggestion => (
+                ].map((suggestion) => (
                   <button
                     key={suggestion}
-                    onClick={() => { setInput(suggestion); inputRef.current?.focus() }}
+                    onClick={() => {
+                      setInput(suggestion);
+                      inputRef.current?.focus();
+                    }}
                     className="text-xs text-left px-3 py-2 rounded-lg border border-gray-200 bg-white hover:border-beacon-300 hover:bg-beacon-50 text-gray-600 hover:text-beacon-700 transition-colors"
                   >
                     {suggestion}
@@ -262,8 +527,11 @@ export default function Chat() {
           </div>
         )}
 
-        {messages.map(message => (
-          <MessageBubble key={message.id} message={message} />
+        {messages.map((message) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+          />
         ))}
 
         {loading && (
@@ -273,9 +541,24 @@ export default function Chat() {
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
               <div className="flex gap-1 items-center">
-                <span className="h-2 w-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="h-2 w-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="h-2 w-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span
+                  className="h-2 w-2 rounded-full bg-gray-300 animate-bounce"
+                  style={{
+                    animationDelay: "0ms",
+                  }}
+                />
+                <span
+                  className="h-2 w-2 rounded-full bg-gray-300 animate-bounce"
+                  style={{
+                    animationDelay: "150ms",
+                  }}
+                />
+                <span
+                  className="h-2 w-2 rounded-full bg-gray-300 animate-bounce"
+                  style={{
+                    animationDelay: "300ms",
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -286,49 +569,77 @@ export default function Chat() {
 
       {/* Safety banner */}
       {lastSafetyPriority && (
-        <SafetyBanner priority={lastSafetyPriority} />
+        <SafetyBanner
+          priority={lastSafetyPriority}
+        />
       )}
 
       {/* Input */}
       <div className="bg-white border-t px-4 py-3">
-        <div className={cn(
-          'flex items-end gap-3 rounded-xl border px-3 py-2 transition-colors',
-          isReady ? 'border-gray-300 focus-within:border-beacon-400' : 'border-gray-200 bg-gray-50'
-        )}>
+        <div
+          className={cn(
+            "flex items-end gap-3 rounded-xl border px-3 py-2 transition-colors",
+            isReady
+              ? "border-gray-300 focus-within:border-beacon-400"
+              : "border-gray-200 bg-gray-50",
+          )}
+        >
           <textarea
             ref={inputRef}
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={isReady ? "Ask anything about the MBA program…" : "Select an agent above to start chatting"}
+            placeholder={
+              isReady
+                ? "Ask anything about the program…"
+                : "Select an agent above to start chatting"
+            }
             disabled={!isReady || loading}
             rows={1}
-            className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none disabled:cursor-not-allowed"
-            style={{ maxHeight: '120px' }}
+            className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none disabled:cursor-not-allowed overflow-hidden"
+            style={{
+              minHeight: "20px",
+              maxHeight: "120px",
+            }}
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || !isReady || loading}
+            disabled={
+              !input.trim() || !isReady || loading
+            }
             className={cn(
-              'h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors',
+              "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors",
               input.trim() && isReady && !loading
-                ? 'bg-beacon-600 text-white hover:bg-beacon-700'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                ? "bg-beacon-600 text-white hover:bg-beacon-700"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed",
             )}
           >
-            {loading
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Send className="h-4 w-4" />
-            }
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-1.5 text-center">
-          Press Enter to send · Shift+Enter for new line
-          {messages.length > 0 && (
-            <span className="ml-2">· Session: {sessionId.slice(0, 8)}…</span>
-          )}
-        </p>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between mt-1.5">
+          <p className="text-xs text-gray-400">
+            Press Enter to send · Shift+Enter for
+            new line
+            {messages.length > 0 && (
+              <span className="ml-2">
+                · Session: {sessionId.slice(0, 8)}
+                …
+              </span>
+            )}
+          </p>
+          <p className="text-xs text-gray-400 italic">
+            AI assistant — not official academic
+            advice
+          </p>
+        </div>
       </div>
     </div>
-  )
+  );
 }

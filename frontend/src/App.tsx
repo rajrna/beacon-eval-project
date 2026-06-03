@@ -11,6 +11,9 @@ import Chat from '@/pages/Chat'
 import DatasetDetail from '@/pages/DatasetDetail'
 import AgentDetail from '@/pages/AgentDetail'
 import AgentVersionDetail from '@/pages/AgentVersionDetail'
+import AgentComparison from '@/pages/AgentComparison'
+import JudgeDetail from '@/pages/JudgeDetail'
+import Dashboard from '@/pages/Dashboard'
 import Runs from '@/pages/Runs'
 import RunDetail from '@/pages/RunDetail'
 import TraceDetail from '@/pages/TraceDetail'
@@ -27,15 +30,17 @@ function AppRoutes() {
     <Shell>
       <TokenSync />
       <Routes>
-        <Route path="/" element={<Navigate to="/institutions" replace />} />
+        <Route path="/" element={<Dashboard />} />
         <Route path="/institutions" element={<Institutions />} />
         <Route path="/programs" element={<Programs />} />
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:id" element={<AgentDetail />} />
+        <Route path="/agents/:id/compare" element={<AgentComparison />} />
         <Route path="/agents/:id/versions/:versionId" element={<AgentVersionDetail />} />
         <Route path="/datasets" element={<Datasets />} />
         <Route path="/datasets/:id" element={<DatasetDetail />} />
         <Route path="/judges" element={<Judges />} />
+        <Route path="/judges/:id" element={<JudgeDetail />} />
         <Route path="/runs" element={<Runs />} />
         <Route path="/runs/:id" element={<RunDetail />} />
         <Route path="/traces" element={<TraceBrowser />} />

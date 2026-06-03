@@ -46,6 +46,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: local
       DEBUG: "true"
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID}
+      BEDROCK_SAFETY_MODEL_ID: ${BEDROCK_SAFETY_MODEL_ID}
     volumes:
       - ./backend:/app
     depends_on:

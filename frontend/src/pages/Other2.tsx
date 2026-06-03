@@ -1,11 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { api } from "@/lib/api/client";
-import {
   useInstitutions,
   usePrograms,
   useAgents,
@@ -918,52 +913,12 @@ export function Datasets() {
 // ── Judges ────────────────────────────────────────────────────────────────────
 
 export function Judges() {
-  const navigate = useNavigate();
-  const qc = useQueryClient();
   const { data: judges, isLoading } = useJudges();
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    slug: "",
-    judge_type: "quality",
-    is_safety_critical: false,
-    description: "",
-  });
-
-  const create = useMutation({
-    mutationFn: (data: any) =>
-      api.post("/v1/judges", data),
-    onSuccess: () => {
-      qc.invalidateQueries({
-        queryKey: ["judges"],
-      });
-      setOpen(false);
-      setForm({
-        name: "",
-        slug: "",
-        judge_type: "quality",
-        is_safety_critical: false,
-        description: "",
-      });
-    },
-  });
-
-  const autoSlug = (name: string) =>
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_|_$/g, "");
-
   return (
     <div>
       <PageHeader
         title="Judges"
         description="LLM-as-judge rubrics for evaluating agent responses"
-        action={
-          <Button onClick={() => setOpen(true)}>
-            + New Judge
-          </Button>
-        }
       />
       {isLoading ? (
         <Spinner />
@@ -973,14 +928,7 @@ export function Judges() {
             <div className="px-6 py-8">
               <EmptyState
                 title="No judges"
-                description="Create a judge or run the seed script to register the built-in judges."
-                action={
-                  <Button
-                    onClick={() => setOpen(true)}
-                  >
-                    New Judge
-                  </Button>
-                }
+                description="Run the seed script to register the built-in judges."
               />
             </div>
           ) : (
@@ -999,10 +947,7 @@ export function Judges() {
                 {judges.items.map((j) => (
                   <tr
                     key={j.id}
-                    className="cursor-pointer hover:bg-white/5 border-b border-white/5 transition-colors"
-                    onClick={() =>
-                      navigate(`/judges/${j.id}`)
-                    }
+                    className="hover:bg-white/5 border-b border-white/5"
                   >
                     <Td className="font-medium text-gray-200">
                       {j.name}
@@ -1049,97 +994,6 @@ export function Judges() {
           )}
         </Card>
       )}
-
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title="New Judge"
-        size="md"
-      >
-        <div className="space-y-4">
-          <Input
-            label="Judge Name"
-            value={form.name}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                name: e.target.value,
-                slug: autoSlug(e.target.value),
-              }))
-            }
-            placeholder="Response Length"
-          />
-          <Input
-            label="Slug"
-            value={form.slug}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                slug: e.target.value,
-              }))
-            }
-            placeholder="response_length"
-          />
-          <Select
-            label="Type"
-            value={form.judge_type}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                judge_type: e.target.value,
-                is_safety_critical:
-                  e.target.value ===
-                  "safety_critical",
-              }))
-            }
-            options={[
-              {
-                value: "quality",
-                label: "Quality",
-              },
-              {
-                value: "safety_critical",
-                label: "Safety Critical",
-              },
-            ]}
-          />
-          <Textarea
-            label="Description (optional)"
-            rows={2}
-            value={form.description}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                description: e.target.value,
-              }))
-            }
-            placeholder="What this judge evaluates..."
-          />
-          {form.judge_type ===
-            "safety_critical" && (
-            <div className="p-3 bg-red-900/20 border border-red-800 rounded-lg text-xs text-red-300">
-              Safety-critical judges require two
-              reviewer sign-offs before any
-              version can be used in eval runs.
-            </div>
-          )}
-          <div className="flex justify-end gap-3 pt-2">
-            <Button
-              variant="outline"
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => create.mutate(form)}
-              loading={create.isPending}
-              disabled={!form.name || !form.slug}
-            >
-              Create Judge
-            </Button>
-          </div>
-        </div>
-      </Dialog>
     </div>
   );
 }

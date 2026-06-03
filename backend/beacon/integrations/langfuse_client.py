@@ -8,6 +8,7 @@ from typing import Any
 import structlog
 
 from beacon.core.settings import get_settings
+from beacon.integrations.anthropic_client import estimate_cost
 
 logger = structlog.get_logger(__name__)
 
@@ -46,8 +47,6 @@ class LangfuseClient:
         if not self._enabled or not self._client:
             return None
         try:
-            # v4: use create_trace_id to generate a stable ID, then
-            # start an observation which creates the trace implicitly
             trace_id = self._client.create_trace_id(seed=run_id)
             obs = self._client.start_observation(
                 name=name,
@@ -85,7 +84,6 @@ class LangfuseClient:
         except Exception as exc:
             logger.warning("langfuse_score_failed", trace_id=trace_id, name=name, error=str(exc))
 
-    # Keep old name as alias for backward compatibility with eval_runner
     def score(
         self,
         trace_id: str,
@@ -94,6 +92,7 @@ class LangfuseClient:
         comment: str | None = None,
         observation_id: str | None = None,
     ) -> None:
+        """Alias for score_trace — backward compatibility."""
         self.score_trace(trace_id, name, value, comment, observation_id)
 
     def create_run(
@@ -102,20 +101,13 @@ class LangfuseClient:
         run_name: str,
         metadata: dict | None = None,
     ) -> str | None:
-        """
-        Create a Langfuse dataset run reference.
-        In v4, dataset runs are created via create_dataset_item calls.
-        We return a stable run ID derived from run_name.
-        """
         if not self._enabled or not self._client:
             return None
         try:
-            # Ensure dataset exists
             try:
                 self._client.create_dataset(name=dataset_name)
             except Exception:
-                pass  # Dataset may already exist
-
+                pass
             logger.debug("langfuse_run_reference_created", run_name=run_name)
             return run_name
         except Exception as exc:
@@ -131,14 +123,9 @@ class LangfuseClient:
         metadata: dict | None = None,
         scores: dict[str, float] | None = None,
     ) -> None:
-        """
-        Log one eval result to a Langfuse dataset run.
-        Creates a dataset item and attaches scores.
-        """
         if not self._enabled or not self._client:
             return
         try:
-            # Create a trace for this eval result
             trace_id = self._client.create_trace_id()
             obs = self._client.start_observation(
                 name=f"{run_name}_result",
@@ -149,8 +136,6 @@ class LangfuseClient:
                 trace_context={"trace_id": trace_id},
             )
             obs.end()
-
-            # Write scores
             if scores:
                 for score_name, score_value in scores.items():
                     self._client.create_score(
@@ -159,8 +144,6 @@ class LangfuseClient:
                         value=score_value,
                         data_type="NUMERIC",
                     )
-
-            # Create dataset item linking to this trace
             self._client.create_dataset_item(
                 dataset_name=dataset_name,
                 input=input,
@@ -171,7 +154,6 @@ class LangfuseClient:
             logger.warning("langfuse_log_eval_result_failed", error=str(exc))
 
     def get_trace_url(self, trace_id: str) -> str | None:
-        """Get the Langfuse UI URL for a trace."""
         if not self._enabled or not self._client:
             return None
         try:
@@ -179,6 +161,129 @@ class LangfuseClient:
         except Exception:
             settings = get_settings()
             return f"{settings.langfuse_host}/trace/{trace_id}"
+
+    def log_chat(
+        self,
+        session_id: str,
+        agent_version_id: str,
+        user_message: str,
+        response_text: str,
+        model: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        safety_flagged: bool = False,
+        injection_flagged: bool = False,
+    ) -> str | None:
+        """Log a chat interaction to Langfuse. Best-effort."""
+        if not self._enabled or not self._client:
+            return None
+        try:
+            input_cost = estimate_cost(input_tokens, 0, model)
+            output_cost = estimate_cost(0, output_tokens, model)
+
+            trace_id = self._client.create_trace_id(seed=session_id)
+            obs = self._client.start_observation(
+                name="chat",
+                as_type="generation",
+                input=user_message,
+                output=response_text,
+                model=model,
+                usage_details={
+                    "input": input_tokens,
+                    "output": output_tokens,
+                },
+                cost_details={
+                    "input": input_cost,
+                    "output": output_cost,
+                    "total": input_cost + output_cost,
+                },
+                metadata={
+                    "agent_version_id": agent_version_id,
+                    "session_id": session_id,
+                    "safety_flagged": safety_flagged,
+                    "injection_flagged": injection_flagged,
+                },
+                trace_context={"trace_id": trace_id},
+            )
+            obs.end()
+            logger.debug("langfuse_chat_logged", trace_id=trace_id, session_id=session_id)
+            return trace_id
+        except Exception as exc:
+            logger.warning("langfuse_log_chat_failed", error=str(exc))
+            return None
+
+    def log_eval_example(
+        self,
+        run_id: str,
+        example_id: str,
+        query: str,
+        agent_response: str,
+        model: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        latency_ms: int = 0,
+        judge_scores: dict[str, float] | None = None,
+        judge_reasoning: dict[str, str] | None = None,
+        passed: bool = False,
+        safety_flags: list[str] | None = None,
+    ) -> str | None:
+        """Log one eval example (agent call + judge scores) as a Langfuse trace."""
+        if not self._enabled or not self._client:
+            return None
+        try:
+            input_cost = estimate_cost(input_tokens, 0, model)
+            output_cost = estimate_cost(0, output_tokens, model)
+
+            trace_id = self._client.create_trace_id(seed=f"{run_id}:{example_id}")
+            obs = self._client.start_observation(
+                name="eval_example",
+                as_type="generation",
+                input=query,
+                output=agent_response,
+                model=model,
+                usage_details={
+                    "input": input_tokens,
+                    "output": output_tokens,
+                },
+                cost_details={
+                    "input": input_cost,
+                    "output": output_cost,
+                    "total": input_cost + output_cost,
+                },
+                metadata={
+                    "run_id": run_id,
+                    "example_id": example_id,
+                    "latency_ms": latency_ms,
+                    "passed": passed,
+                    "safety_flags": safety_flags or [],
+                    "judge_reasoning": judge_reasoning or {},
+                },
+                trace_context={"trace_id": trace_id},
+            )
+            obs.end()
+
+            if judge_scores:
+                for judge_slug, score_value in judge_scores.items():
+                    self._client.create_score(
+                        trace_id=trace_id,
+                        name=judge_slug,
+                        value=score_value,
+                        data_type="NUMERIC",
+                        comment=(judge_reasoning or {}).get(judge_slug, "")[:500],
+                    )
+
+            self._client.create_score(
+                trace_id=trace_id,
+                name="passed",
+                value=1.0 if passed else 0.0,
+                data_type="NUMERIC",
+            )
+
+            logger.debug("langfuse_eval_example_logged", trace_id=trace_id, example_id=example_id)
+            return trace_id
+        except Exception as exc:
+            logger.warning("langfuse_log_eval_example_failed", error=str(exc))
+            return None
 
     def flush(self) -> None:
         """Flush pending writes. Call at end of eval run."""
@@ -190,7 +295,6 @@ class LangfuseClient:
                 logger.warning("langfuse_flush_failed", error=str(exc))
 
 
-# Module-level singleton
 _langfuse: LangfuseClient | None = None
 
 

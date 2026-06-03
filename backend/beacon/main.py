@@ -91,10 +91,13 @@ def create_app() -> FastAPI:
     from beacon.routes.annotations import router as annotations_router
     from beacon.routes.sme import router as sme_router
     from beacon.routes.chat import router as chat_router
+    from beacon.routes.dashboard import router as dashboard_router
+    from beacon.routes.compare import router as compare_router
 
     app.include_router(institutions_router, prefix="/v1/institutions", tags=["institutions"])
     app.include_router(programs_router, prefix="/v1/programs", tags=["programs"])
     app.include_router(agents_router, prefix="/v1/agents", tags=["agents"])
+    app.include_router(compare_router, prefix="/v1/agents", tags=["compare"])
     app.include_router(datasets_router, prefix="/v1/datasets", tags=["datasets"])
     app.include_router(judges_router, prefix="/v1/judges", tags=["judges"])
     app.include_router(runs_router, prefix="/v1/runs", tags=["runs"])
@@ -102,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(annotations_router, prefix="/v1/annotations", tags=["annotations"])
     app.include_router(sme_router, prefix="/v1/sme", tags=["sme"])
     app.include_router(chat_router, prefix="/v1/chat", tags=["chat"])
+    app.include_router(dashboard_router, prefix="/v1/dashboard", tags=["dashboard"])
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/healthz", include_in_schema=False)

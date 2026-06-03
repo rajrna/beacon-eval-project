@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   Building2, GraduationCap, Bot, Database, Scale,
-  PlayCircle, Activity, Inbox, Settings, Menu, X, AlertTriangle, MessageSquare,
+  PlayCircle, Activity, Inbox, Settings, Menu, X, AlertTriangle, MessageSquare, LayoutDashboard,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth/useAuth'
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui'
 import { useSmeQueue } from '@/lib/api/hooks'
 
 const NAV_ITEMS = [
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/institutions', icon: Building2, label: 'Institutions' },
   { to: '/programs', icon: GraduationCap, label: 'Programs' },
   { to: '/agents', icon: Bot, label: 'Agents' },

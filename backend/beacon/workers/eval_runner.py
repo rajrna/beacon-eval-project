@@ -60,14 +60,12 @@ async def _execute_run(session: AsyncSession, run_id: uuid.UUID) -> None:
     from beacon.repositories.eval import EvalRunRepository
     from beacon.repositories.dataset import ExampleRepository
     from beacon.judges import get_judge
-    from beacon.integrations.anthropic_client import get_anthropic_client
     from beacon.integrations.langfuse_client import get_langfuse_client
 
     settings = get_settings()
     run_repo = EvalRunRepository(session)
     example_repo = ExampleRepository(session)
     langfuse = get_langfuse_client()
-    client = get_anthropic_client()
 
     run = await run_repo.get_by_id(run_id)
     if not run:
@@ -127,7 +125,7 @@ async def _execute_run(session: AsyncSession, run_id: uuid.UUID) -> None:
     for i in range(0, len(examples), batch_size):
         batch = examples[i: i + batch_size]
         results = await asyncio.gather(
-            *[_evaluate_example(session, run, ex, agent_version, judges, client, langfuse) for ex in batch],
+            *[_evaluate_example(session, run, ex, agent_version, judges, langfuse) for ex in batch],
             return_exceptions=True,
         )
         for result in results:
@@ -179,18 +177,19 @@ async def _execute_run(session: AsyncSession, run_id: uuid.UUID) -> None:
         )
 
 
-async def _evaluate_example(session, run, example, agent_version, judges, client, langfuse):
+async def _evaluate_example(session, run, example, agent_version, judges, langfuse):
     import time
     from beacon.models.eval import EvalResult
+    from beacon.integrations.anthropic_client import call_agent
 
     start = time.monotonic()
     try:
-        agent_result = await client.call_agent(
+        agent_result = await call_agent(
             system_prompt=agent_version.system_prompt,
             user_message=example.query,
             model=agent_version.model_id,
-            max_tokens=agent_version.max_tokens,
-            temperature=agent_version.temperature,
+            max_tokens=agent_version.max_tokens or 1024,
+            temperature=agent_version.temperature or 0.0,
         )
         agent_response = agent_result["text"]
         agent_cost = agent_result["cost_usd"]
@@ -223,16 +222,43 @@ async def _evaluate_example(session, run, example, agent_version, judges, client
             judge_scores[judge.slug] = {"score": 0.0, "passed": False, "error": str(jr)}
             all_passed = False
         else:
-            judge_scores[judge.slug] = {"score": jr.score, "passed": jr.passed, "reasoning": jr.reasoning, "flags": jr.flags}
+            judge_scores[judge.slug] = {
+                "score": jr.score,
+                "passed": jr.passed,
+                "reasoning": jr.reasoning,
+                "flags": jr.flags,
+            }
             judge_cost += jr.cost_usd
             if not jr.passed:
                 all_passed = False
             if jr.flags:
                 safety_flags.extend(jr.flags)
-            if run.langfuse_run_id:
-                langfuse.score(trace_id=run.langfuse_run_id, name=judge.slug, value=jr.score, comment=jr.reasoning[:500] if jr.reasoning else None)
 
     latency_ms = int((time.monotonic() - start) * 1000)
+
+    # ── Log per-example trace to Langfuse ─────────────────────────────────────
+    langfuse_trace_id = langfuse.log_eval_example(
+        run_id=str(run.id),
+        example_id=str(example.id),
+        query=example.query,
+        agent_response=agent_response,
+        model=agent_version.model_id,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        latency_ms=latency_ms,
+        judge_scores={
+            slug: data["score"]
+            for slug, data in judge_scores.items()
+            if "score" in data
+        },
+        judge_reasoning={
+            slug: data.get("reasoning", "")
+            for slug, data in judge_scores.items()
+        },
+        passed=all_passed,
+        safety_flags=safety_flags,
+    )
+
     result = EvalResult(
         eval_run_id=run.id,
         example_id=example.id,
@@ -244,6 +270,7 @@ async def _evaluate_example(session, run, example, agent_version, judges, client
         cost_usd=agent_cost + judge_cost,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        langfuse_observation_id=langfuse_trace_id,
     )
     session.add(result)
     return result

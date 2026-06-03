@@ -31,6 +31,7 @@ env/
 infra/env.local
 *.pem
 *.key
+backend/beacon/core/settings.py
 
 # ── Testing & coverage ────────────────────────────────────────────────────────
 .pytest_cache/
@@ -86,6 +87,8 @@ logs/
 check_eval.py
 check_run.py
 load_examples.py
+fix_models.py
+check_column.py
 
 # ── Alembic ───────────────────────────────────────────────────────────────────
 # Keep migrations, ignore local overrides
