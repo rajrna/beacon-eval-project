@@ -32,6 +32,7 @@ infra/env.local
 *.pem
 *.key
 backend/beacon/core/settings.py
+start.ps1
 
 # ── Testing & coverage ────────────────────────────────────────────────────────
 .pytest_cache/

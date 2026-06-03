@@ -59,10 +59,25 @@ async def call_agent(
     model: str | None = None,
     max_tokens: int = 1024,
     temperature: float = 0.0,
+    conversation_history: list[dict] | None = None,
 ) -> dict:
-    """Call the agent via Bedrock Converse API. Returns text, cost, token counts."""
+    """
+    Call the agent via Bedrock Converse API. Returns text, cost, token counts.
+
+    conversation_history: list of {"role": "user"|"assistant", "content": "..."}
+    representing prior turns. The current user_message is appended automatically.
+    """
     import asyncio
     resolved_model = model or settings.bedrock_model_id
+
+    # Build full message list: history + current message
+    messages = []
+    for turn in (conversation_history or []):
+        messages.append({
+            "role": turn["role"],
+            "content": [{"text": turn["content"]}],
+        })
+    messages.append({"role": "user", "content": [{"text": user_message}]})
 
     # boto3 is sync — run in executor to avoid blocking the event loop
     loop = asyncio.get_event_loop()
@@ -71,7 +86,7 @@ async def call_agent(
         lambda: get_client().converse(
             modelId=resolved_model,
             system=[{"text": system_prompt}],
-            messages=[{"role": "user", "content": [{"text": user_message}]}],
+            messages=messages,
             inferenceConfig={
                 "maxTokens": max_tokens,
                 "temperature": temperature,
@@ -95,7 +110,6 @@ async def call_agent(
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
     }
-
 
 async def complete(
     *,
