@@ -3,6 +3,7 @@ from beacon.judges.academic_integrity import AcademicIntegrityJudge
 from beacon.judges.base import BaseJudge, JudgeResult
 from beacon.judges.completeness import CompletenessJudge
 from beacon.judges.ferpa_compliance import FERPAComplianceJudge
+from beacon.judges.hallucination_detection import HallucinationDetectionJudge
 from beacon.judges.mental_health_safety import MentalHealthSafetyJudge
 from beacon.judges.tone import ToneJudge
 
@@ -14,6 +15,7 @@ JUDGE_REGISTRY: dict[str, type[BaseJudge]] = {
     MentalHealthSafetyJudge.slug: MentalHealthSafetyJudge,
     AcademicIntegrityJudge.slug: AcademicIntegrityJudge,
     FERPAComplianceJudge.slug: FERPAComplianceJudge,
+    HallucinationDetectionJudge.slug: HallucinationDetectionJudge,
 }
 
 
@@ -26,7 +28,7 @@ def get_judge(slug: str) -> BaseJudge:
 
 
 def get_all_quality_judges() -> list[BaseJudge]:
-    return [AccuracyJudge(), ToneJudge(), CompletenessJudge()]
+    return [AccuracyJudge(), ToneJudge(), CompletenessJudge(), HallucinationDetectionJudge()]
 
 
 def get_all_safety_judges() -> list[BaseJudge]:
@@ -37,5 +39,6 @@ __all__ = [
     "BaseJudge", "JudgeResult",
     "AccuracyJudge", "ToneJudge", "CompletenessJudge",
     "MentalHealthSafetyJudge", "AcademicIntegrityJudge", "FERPAComplianceJudge",
+    "HallucinationDetectionJudge",
     "JUDGE_REGISTRY", "get_judge", "get_all_quality_judges", "get_all_safety_judges",
 ]

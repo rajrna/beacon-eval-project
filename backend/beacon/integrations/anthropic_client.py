@@ -23,19 +23,25 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-def _make_client():
-    os.environ["AWS_BEARER_TOKEN_BEDROCK"] = settings.bedrock_api_key
-    return boto3.client("bedrock-runtime", region_name=settings.aws_region)
+# def _make_client():
+#     os.environ["AWS_BEARER_TOKEN_BEDROCK"] = settings.bedrock_api_key
+#     return boto3.client("bedrock-runtime", region_name=settings.aws_region)
 
+def _make_client():
+    if settings.aws_bearer_token_bedrock:
+        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = settings.aws_bearer_token_bedrock
+    session = boto3.Session()    
+    # return boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    return session.client("bedrock-runtime", region_name=settings.aws_region)
 
 _client = None
 
+def reset_client():
+    global _client
+    _client = None
 
 def get_client():
-    global _client
-    if _client is None:
-        _client = _make_client()
-    return _client
+    return _make_client()
 
 
 def estimate_cost(input_tokens: int, output_tokens: int, model: str | None = None) -> float:
