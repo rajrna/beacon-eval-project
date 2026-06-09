@@ -140,13 +140,13 @@ Search query:"""
                 vector_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
                 rows = await self.session.execute(
                     text("""
-                        SELECT id, 1 - (embedding <=> :query_vec::vector(1024)) as similarity
+                        SELECT id, 1 - (embedding <=> CAST(:query_vec AS vector(1024))) as similarity
                         FROM program_knowledge
                         WHERE program_id = :pid
                           AND embedding IS NOT NULL
                           AND is_active = true
-                          AND 1 - (embedding <=> :query_vec::vector(1024)) > :threshold
-                        ORDER BY embedding <=> :query_vec::vector(1024)
+                          AND 1 - (embedding <=> CAST(:query_vec AS vector(1024))) > :threshold
+                        ORDER BY embedding <=> CAST(:query_vec AS vector(1024))
                         LIMIT :top_k
                     """),
                     {
@@ -231,6 +231,77 @@ Search query:"""
             logger.warning("rag_retrieve_failed", error=str(exc))
             return await self._fallback_all(program_id), query
 
+    # ── ADD THIS METHOD to RAGService class in rag_service.py ────────────────────
+# Add it after the retrieve() method, before _log_knowledge_gap()
+
+    async def retrieve_with_documents(
+        self,
+        program_id: str,
+        query: str,
+        top_k: int = TOP_K,
+        rewrite_query: bool = True,
+    ) -> tuple[list, list[dict], str]:
+        """
+        Full hybrid retrieval across both knowledge entries AND document chunks.
+
+        Returns (knowledge_entries, document_chunks, rewritten_query).
+        """
+        # Get rewritten query once, share between both searches
+        search_query = query
+        if rewrite_query:
+            search_query = await self._rewrite_query(query)
+
+        # Retrieve from knowledge entries (existing pipeline)
+        knowledge_entries, _ = await self.retrieve(
+            program_id=program_id,
+            query=query,
+            top_k=top_k,
+            rewrite_query=False,  # already rewritten above
+        )
+
+        # Retrieve from document chunks
+        from beacon.services.document_ingestion import DocumentIngestionService
+        doc_svc = DocumentIngestionService(self.session)
+        doc_chunks = await doc_svc.retrieve_chunks(
+            program_id=program_id,
+            query=search_query,
+            top_k=top_k,
+        )
+
+        return knowledge_entries, doc_chunks, search_query
+
+    def build_context_block_with_documents(
+        self,
+        knowledge_entries: list,
+        doc_chunks: list[dict],
+    ) -> str:
+        """
+        Build combined context block from knowledge entries + document chunks.
+        """
+        lines = []
+
+        if knowledge_entries:
+            lines.append("--- PROGRAM FACTS ---")
+            for entry in knowledge_entries:
+                label = entry.display_label or entry.key.replace("_", " ").title()
+                verified = f" (verified {entry.last_verified})" if entry.last_verified else ""
+                lines.append(f"- {label}: {entry.value}{verified}")
+            lines.append("")
+
+        if doc_chunks:
+            lines.append("--- RELEVANT DOCUMENT EXCERPTS ---")
+            for chunk in doc_chunks:
+                source = chunk.get("filename", "document")
+                page = f" (page {chunk['page_number']})" if chunk.get("page_number") else ""
+                lines.append(f"[From: {source}{page}]")
+                lines.append(chunk["content"][:500])  # truncate very long chunks
+                lines.append("")
+
+        if lines:
+            lines.append("--- END CONTEXT ---")
+
+        return "\n".join(lines)
+
     async def _log_knowledge_gap(self, program_id: str, query: str) -> None:
         """Log a query that returned no results. Best-effort."""
         try:
@@ -247,6 +318,7 @@ Search query:"""
             await self.session.flush()
         except Exception as exc:
             logger.warning("knowledge_gap_log_failed", error=str(exc))
+            await self.session.rollback()
 
     async def get_knowledge_gaps(self, program_id: str, limit: int = 20) -> list[dict]:
         """Return the most common unanswered queries for a program."""

@@ -30,6 +30,7 @@ import AgentDetail from "@/pages/AgentDetail";
 import Institutions from "@/pages/Institutions";
 import KnowledgeGaps from "@/pages/KnowledgeGaps";
 import DatasetDetail from "@/pages/DatasetDetail";
+import DocumentUpload from "@/pages/DocumentUpload";
 import AgentComparison from "@/pages/AgentComparison";
 import AgentVersionDetail from "@/pages/AgentVersionDetail";
 import {
@@ -124,6 +125,10 @@ function AppRoutes() {
         <Route
           path="/knowledge-gaps"
           element={<KnowledgeGaps />}
+        />
+        <Route
+          path="/documents"
+          element={<DocumentUpload />}
         />
       </Routes>
     </Shell>

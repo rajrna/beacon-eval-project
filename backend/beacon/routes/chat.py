@@ -103,7 +103,8 @@ async def chat(
 
     sanitized_message = sanitize_for_prompt(user_message)
 
-    # ── RAG: retrieve relevant knowledge ─────────────────────────────────────
+  
+   # ── RAG: retrieve relevant knowledge + document chunks ───────────────────
     system_prompt = agent_version.system_prompt
     retrieved_entries = []
     rewritten_query = sanitized_message
@@ -111,7 +112,7 @@ async def chat(
     if agent and agent.program_id:
         try:
             rag = RAGService(session)
-            relevant_entries, rewritten_query = await rag.retrieve(
+            relevant_entries, doc_chunks, rewritten_query = await rag.retrieve_with_documents(
                 program_id=str(agent.program_id),
                 query=sanitized_message,
             )
@@ -119,13 +120,16 @@ async def chat(
                 {"key": e.key, "category": e.category, "label": e.display_label}
                 for e in relevant_entries
             ]
-            if relevant_entries:
-                context_block = rag.build_context_block(relevant_entries)
+            if relevant_entries or doc_chunks:
+                context_block = rag.build_context_block_with_documents(
+                    relevant_entries, doc_chunks
+                )
                 system_prompt = f"{system_prompt}\n\n{context_block}"
                 logger.debug(
                     "rag_context_injected",
                     program_id=str(agent.program_id),
                     entries_retrieved=len(relevant_entries),
+                    doc_chunks_retrieved=len(doc_chunks),
                     rewritten_query=rewritten_query[:80],
                 )
         except Exception as exc:

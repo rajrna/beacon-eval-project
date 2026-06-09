@@ -19,6 +19,7 @@ import {
   MessageSquare,
   LayoutDashboard,
   BookOpen,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/useAuth";
@@ -72,6 +73,11 @@ const NAV_ITEMS = [
     to: "/knowledge-gaps",
     icon: BookOpen,
     label: "Knowledge Gaps",
+  },
+  {
+    to: "/documents",
+    icon: FileText,
+    label: "Documents",
   },
 ];
 
