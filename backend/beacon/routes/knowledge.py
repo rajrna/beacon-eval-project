@@ -99,3 +99,20 @@ async def delete_knowledge_entry(
     current_user: CurrentUser,
 ):
     await KnowledgeService(session).delete(entry_id)
+
+@router.get("/gaps", response_model=list[dict])
+async def get_knowledge_gaps(
+    program_id: uuid.UUID,
+    session: DbSession,
+    current_user: CurrentUser,
+    limit: int = Query(default=20, le=100),
+):
+    """
+    Return the most common queries that returned no RAG results.
+    Use this to identify what knowledge entries to add next.
+    Sorted by frequency — most common gaps first.
+    """
+    from beacon.services.rag import RAGService
+    rag = RAGService(session)
+    return await rag.get_knowledge_gaps(str(program_id), limit=limit)
+ 

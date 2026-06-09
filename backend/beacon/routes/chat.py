@@ -105,13 +105,20 @@ async def chat(
 
     # ── RAG: retrieve relevant knowledge ─────────────────────────────────────
     system_prompt = agent_version.system_prompt
+    retrieved_entries = []
+    rewritten_query = sanitized_message
+
     if agent and agent.program_id:
         try:
             rag = RAGService(session)
-            relevant_entries = await rag.retrieve(
+            relevant_entries, rewritten_query = await rag.retrieve(
                 program_id=str(agent.program_id),
                 query=sanitized_message,
             )
+            retrieved_entries = [
+                {"key": e.key, "category": e.category, "label": e.display_label}
+                for e in relevant_entries
+            ]
             if relevant_entries:
                 context_block = rag.build_context_block(relevant_entries)
                 system_prompt = f"{system_prompt}\n\n{context_block}"
@@ -119,6 +126,7 @@ async def chat(
                     "rag_context_injected",
                     program_id=str(agent.program_id),
                     entries_retrieved=len(relevant_entries),
+                    rewritten_query=rewritten_query[:80],
                 )
         except Exception as exc:
             logger.warning("rag_failed", error=str(exc))
@@ -172,6 +180,8 @@ async def chat(
         output_tokens=agent_result_data.get("output_tokens", 0),
         safety_flagged=trace.needs_review,
         injection_flagged=injection.flagged,
+        retrieved_knowledge=retrieved_entries,
+        rewritten_query=rewritten_query,
     )
 
     return ChatResponse(

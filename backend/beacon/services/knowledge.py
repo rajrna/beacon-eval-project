@@ -107,6 +107,13 @@ class KnowledgeService:
         self.session.add(entry)
         await self.session.flush()
         await self.session.refresh(entry)
+
+        try:
+            from beacon.services.rag import RAGService
+            await RAGService(self.session).embed_and_store(entry)
+        except Exception as exc:
+            logger.warning("knowledge_auto_embed_fialed", key=data.key, error=str(exc))    
+
         logger.info("knowledge_entry_created", program_id=str(program_id), key=data.key, category=data.category)
         return KnowledgeEntryResponse.model_validate(entry)
 
@@ -138,6 +145,13 @@ class KnowledgeService:
                 self.session.add(entry)
             await self.session.flush()
             await self.session.refresh(entry)
+
+            try:
+                from beacon.services.rag import RAGService
+                await RAGService(self.session).embed_and_store(entry)
+            except Exception as exc:
+                logger.warning("knowledge_auto_embed_failed", key=data.key, error=str(exc))
+
             created.append(KnowledgeEntryResponse.model_validate(entry))
 
         await self.session.commit()
@@ -159,6 +173,12 @@ class KnowledgeService:
             setattr(entry, field, value)
         await self.session.flush()
         await self.session.refresh(entry)
+        try:
+            from beacon.services.rag import RAGService
+            await RAGService(self.session).embed_and_store(entry)
+        except Exception as exc:
+            logger.warning("knowledge_auto_embed_failed", entry_id=str(entry_id), error=str(exc))
+        
         return KnowledgeEntryResponse.model_validate(entry)
 
     async def delete(self, entry_id: uuid.UUID) -> None:

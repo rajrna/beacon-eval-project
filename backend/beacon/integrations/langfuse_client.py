@@ -173,6 +173,8 @@ class LangfuseClient:
         output_tokens: int = 0,
         safety_flagged: bool = False,
         injection_flagged: bool = False,
+        retrieved_knowledge: list[dict] | None = None,
+        rewritten_query: str | None = None,
     ) -> str | None:
         """Log a chat interaction to Langfuse. Best-effort."""
         if not self._enabled or not self._client:
@@ -202,6 +204,9 @@ class LangfuseClient:
                     "session_id": session_id,
                     "safety_flagged": safety_flagged,
                     "injection_flagged": injection_flagged,
+                    "rag_retrieved": retrieved_knowledge or [],           
+                    "rag_retrieved_count": len(retrieved_knowledge or []),
+                    "rag_rewritten_query": rewritten_query or "",
                 },
                 trace_context={"trace_id": trace_id},
             )
